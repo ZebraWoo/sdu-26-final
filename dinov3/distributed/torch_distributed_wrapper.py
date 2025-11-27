@@ -261,8 +261,8 @@ def enable_distributed(
     if set_cuda_current_device:
         torch.cuda.set_device(torch_env.local_rank)
 
-    dist.init_process_group(backend="nccl", timeout=timeout)
-    dist.barrier()
+    dist.init_process_group(backend="nccl", timeout=timeout, device_id=torch_env.local_rank)
+    dist.barrier() # syc processes' status
 
     if restrict_print_to_main_process:
         _restrict_print_to_main_process()

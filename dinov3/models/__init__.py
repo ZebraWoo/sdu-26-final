@@ -55,7 +55,7 @@ def build_model(args, only_teacher=False, img_size=224, device=None):
             untie_global_and_local_cls_norm=args.untie_global_and_local_cls_norm,
             device=device,
         )
-        teacher = vits.__dict__[args.arch](**vit_kwargs)
+        teacher = vits.__dict__[args.arch](**vit_kwargs) # configure model architecture dynamically
         teacher = init_fp8(teacher, args)
         if only_teacher:
             return teacher, teacher.embed_dim

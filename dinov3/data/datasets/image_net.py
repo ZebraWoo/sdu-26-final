@@ -26,9 +26,9 @@ class _Split(Enum):
     @property
     def length(self) -> int:
         split_lengths = {
-            _Split.TRAIN: 1_281_167,
-            _Split.VAL: 50_000,
-            _Split.TEST: 100_000,
+            _Split.TRAIN: 1_281_159,
+            _Split.VAL: 30_000,
+            _Split.TEST: 20_000,
         }
         return split_lengths[self]
 
@@ -41,7 +41,7 @@ class _Split(Enum):
             basename = f"{class_id}_{actual_index}"
         else:  # self in (_Split.VAL, _Split.TEST):
             basename = f"ILSVRC2012_{self.value}_{actual_index:08d}"
-        return os.path.join(dirname, basename + ".JPEG")
+        return os.path.join(dirname, basename + ".jpg")
 
     def parse_image_relpath(self, image_relpath: str) -> Tuple[str, int]:
         assert self != _Split.TEST
@@ -197,7 +197,7 @@ class ImageNet(ExtendedVisionDataset):
             sample_count = split.length
             max_class_id_length, max_class_name_length = 0, 0
         else:
-            labels_path = "labels.txt"
+            labels_path = "labels.csv"
             logger.info(f'loading labels from "{labels_path}"')
             labels = self._load_labels(labels_path)
 
@@ -217,7 +217,7 @@ class ImageNet(ExtendedVisionDataset):
         dtype = np.dtype(
             [
                 ("actual_index", "<u4"),
-                ("class_index", "<u4"),
+                ("class_index", "<i4"),
                 ("class_id", f"U{max_class_id_length}"),
                 ("class_name", f"U{max_class_name_length}"),
             ]
@@ -233,7 +233,7 @@ class ImageNet(ExtendedVisionDataset):
                     old_percent = percent
 
                 actual_index = index + 1
-                class_index = np.uint32(-1)
+                class_index = np.int32(-1)
                 class_id, class_name = "", ""
                 entries_array[index] = (actual_index, class_index, class_id, class_name)
         else:

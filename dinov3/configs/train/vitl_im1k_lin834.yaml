@@ -39,9 +39,9 @@ ibot:
   head_nlayers: 3
   head_hidden_dim: 2048
 train:
-  batch_size_per_gpu: 64
-  dataset_path: ImageNet:split=TRAIN
-  output_dir: /checkpoint/dino/qas/rope/vitl16_im1k
+  batch_size_per_gpu: 16
+  dataset_path: "ImageNet:split=TRAIN:root=/sdu/haodi/imagenet1k-256:extra=/sdu/haodi/imagenet1k-256/extra"
+  output_dir: "/checkpoint/dino/qas/rope/vitl16_im1k"
   saveckp_freq: 20
   seed: 0
   num_workers: 10

@@ -44,7 +44,7 @@ class DINOHead(nn.Module):
         if not only_last_layer:
             x = self.mlp(x)
             eps = 1e-6 if x.dtype == torch.float16 else 1e-12
-            x = nn.functional.normalize(x, dim=-1, p=2, eps=eps)
+            x = nn.functional.normalize(x, dim=-1, p=2, eps=eps) # l2 norm
         if not no_last_layer:
             x = self.last_layer(x)
         return x

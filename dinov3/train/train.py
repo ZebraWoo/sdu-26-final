@@ -15,7 +15,13 @@ from pathlib import Path
 
 import torch
 import torch.distributed
-from torch.distributed._tensor import DTensor
+from torch.distributed.tensor import DTensor
+
+import os
+import sys
+PROJECT_ROOT = "/home/jiangwenjing/hd/dinov3"
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import dinov3.distributed as distributed
 from dinov3.checkpointer import (
@@ -46,10 +52,9 @@ torch.backends.cudnn.benchmark = False  # True
 
 logger = logging.getLogger("dinov3")
 
-
 def get_args_parser(add_help: bool = True):
     parser = argparse.ArgumentParser("DINOv3 training", add_help=add_help)
-    parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
+    parser.add_argument("--config-file", default="dinov3/configs/train/vitl_derm_pretrain.yaml", metavar="FILE", help="path to config file")
     parser.add_argument(
         "--no-resume",
         action="store_true",
@@ -75,7 +80,7 @@ For python-based LazyConfig, use "path.key=value".
     )
     parser.add_argument(
         "--output-dir",
-        default="./local_dino",
+        default="/data/wenjing/skin_dataset/DermDino-3-outputs",
         type=str,
         help="Path to save logs and checkpoints.",
     )
@@ -595,7 +600,7 @@ def main(argv=None):
     else:
         setup_job(output_dir=args.output_dir, seed=args.seed)
         cfg = setup_config(args, strict_cfg=False)
-        logger.info(cfg)
+        logger.info(str(cfg))
         setup_logging(
             output=os.path.join(os.path.abspath(args.output_dir), "nan_logs"),
             name="nan_logger",

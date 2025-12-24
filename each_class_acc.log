@@ -1,0 +1,44 @@
+Found 4 linear output folders.
+
+========================================================================
+Processing: /data/wenjing/skin_dataset/rose-outputs/bcn20k_linear_output
+  Loaded preds:   (1779, 9)
+  Loaded targets: (1779,)
+  Per-class accuracy:
+    Class 0: 0.4516
+    Class 1: 0.8061
+    Class 2: 0.3462
+    Class 3: 0.4667
+    Class 4: 0.7056
+    Class 5: 0.8351
+    Class 6: 0.2121
+    Class 7: 0.4130
+    Class 8: 0.4667
+========================================================================
+Processing: /data/wenjing/skin_dataset/rose-outputs/ham_linear_output
+  Loaded preds:   (1002, 7)
+  Loaded targets: (1002,)
+  Per-class accuracy:
+    Class 0: 0.6905
+    Class 1: 0.8824
+    Class 2: 0.6321
+    Class 3: 0.3571
+    Class 4: 0.6204
+    Class 5: 0.9626
+    Class 6: 0.7692
+========================================================================
+Processing: /data/wenjing/skin_dataset/rose-outputs/hiba_linear_output
+  Loaded preds:   (124, 2)
+  Loaded targets: (124,)
+  Per-class accuracy:
+    Class 0: 0.8800
+    Class 1: 0.8980
+========================================================================
+Processing: /data/wenjing/skin_dataset/rose-outputs/mn_linear_output
+  Loaded preds:   (1806, 2)
+  Loaded targets: (1806,)
+  Per-class accuracy:
+    Class 0: 0.8906
+    Class 1: 0.7180
+
+Done.

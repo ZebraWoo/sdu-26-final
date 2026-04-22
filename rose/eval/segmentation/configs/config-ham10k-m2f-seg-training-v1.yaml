@@ -1,0 +1,67 @@
+]# Config for HAM10K, Mask2Former training
+
+bs: 2              # 每卡 batch size，按你显存调
+n_gpus: 4          # GPU 数量
+metric_to_save: 'mIoU'
+model_dtype: FLOAT32
+
+model:
+  model_name: ROSE
+  config_file: /data/wenjing/skin_dataset/rose-outputs/config.yaml
+  pretrained_weights: /data/wenjing/skin_dataset/rose-outputs/eval/training_35999/teacher_checkpoint.pth
+
+scheduler:
+  total_iter: 30000
+  type: 'WarmupOneCycleLR'
+  constructor_kwargs:
+    warmup_iters: 5000
+    warmup_ratio: 1e-6
+    final_div_factor: .inf
+    pct_start: 0
+    anneal_strategy: 'cos'
+    use_beta1: False
+    update_momentum: False
+
+optimizer:
+  lr: 1e-3
+  beta1: 0.9
+  beta2: 0.999
+  weight_decay: 1e-3
+  gradient_clip: 'inf'
+
+datasets:
+  root: "/data/wenjing/skin_dataset/ssl/segmentation/HAM10000"
+  train: ham10k_seg:split=TRAIN
+  val:   ham10k_seg:split=VAL
+  test:  ham10k_seg:split=TEST
+
+train:
+  # 损失权重：Mask2Former 默认可用 dice + ce，你可按需要改
+  diceloss_weight: 0.5
+  celoss_weight: 1.0
+
+decoder_head:
+  type: "m2f"              # 使用 Mask2Former 头
+  backbone_out_layers: LAST
+  use_cls_token: False
+  use_batchnorm: True
+  use_backbone_norm: True
+  num_classes: 2           # 背景 + 病灶；如果有多类分割这里改成类别数
+
+transforms:
+  train:
+    img_size: 224
+    random_img_size_ratio_range: [0.5, 2.0]
+    crop_size: [224, 224]
+    flip_prob: 0.5
+  eval:
+    img_size: 224
+
+eval:
+  compute_metric_per_image: False
+  reduce_zero_label: False
+  mode: "slide"
+  crop_size: 224
+  stride: 341
+  eval_interval: 500
+  use_tta: False

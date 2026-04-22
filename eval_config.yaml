@@ -1,0 +1,52 @@
+model:
+  config_file: null
+  pretrained_weights: null
+  dino_hub: null
+  model_name: PanDerm
+train:
+  dataset: ???
+  val_dataset: ???
+  val_metric_type: MEAN_ACCURACY
+  batch_size: 128
+  num_workers: 8
+  avg: true
+  learning_rates:
+  - 1.0e-05
+  - 2.0e-05
+  - 5.0e-05
+  - 0.0001
+  - 0.0002
+  - 0.0005
+  - 0.001
+  - 0.002
+  - 0.005
+  - 0.01
+  - 0.02
+  - 0.05
+  - 0.1
+  n_last_blocks_list:
+  - 1
+  loss_type: CROSS_ENTROPY
+  optimizer_type: SGD
+  scheduler_type: COSINE_ANNEALING
+  epochs: 90
+  epoch_length: 20
+  save_checkpoint_iterations: null
+  eval_period_iterations: null
+  checkpoint_retention_policy: BEST
+  resume: true
+  classifier_fpath: null
+eval:
+  test_datasets: []
+  test_metric_types: []
+  batch_size: 128
+  num_workers: 8
+transform:
+  resize_size: 256
+  crop_size: 224
+few_shot:
+  enable: true
+  k_or_percent: 0.5
+  n_tries: 3
+save_results: true
+output_dir: .

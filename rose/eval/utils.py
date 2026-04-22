@@ -76,20 +76,25 @@ def wrap_model(
 
 
 class ModelWithIntermediateLayers(nn.Module):
-    def __init__(self, feature_model, n_last_blocks, autocast_ctx):
+    def __init__(self, feature_model, n_last_blocks, autocast_ctx, reshape=False, return_class_token=True):
         super().__init__()
         self.feature_model = feature_model
         self.feature_model.eval()
         self.n_last_blocks = n_last_blocks
         self.autocast_ctx = autocast_ctx
-
+        self.reshape = reshape
+        self.return_class_token = return_class_token
     def forward(self, images):
         if hasattr(self.feature_model, "get_intermediate_layers"):
             with torch.inference_mode():
                 with self.autocast_ctx():
                     features = self.feature_model.get_intermediate_layers(
-                        images, n=self.n_last_blocks, return_class_token=True
+                        images, n=self.n_last_blocks, reshape=self.reshape, return_class_token=self.return_class_token
                     )                
+        elif not self.return_class_token and hasattr(self.feature_model,"get_last_feature_map"):
+            with torch.no_grad():
+                with self.autocast_ctx():                       
+                    features = self.feature_model.get_last_feature_map(images)
         else:
             with torch.no_grad():
                 with self.autocast_ctx():                       

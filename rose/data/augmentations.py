@@ -165,7 +165,7 @@ class DataAugmentationDerm(object):
         self.normalize = transforms.Compose(
             [
                 transforms.ToTensor(),
-                make_normalize_transform(mean=mean, std=std),
+                # make_normalize_transform(mean=mean, std=std),
             ]
         )
 

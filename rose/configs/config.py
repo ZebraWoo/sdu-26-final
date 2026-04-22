@@ -90,7 +90,7 @@ def get_cfg_from_args(args: DinoV3SetupArgs, multidistillation=False, strict=Tru
     return cfg
 
 
-def setup_config(args: DinoV3SetupArgs, strict_cfg=True):
+def setup_config(args: DinoV3SetupArgs, strict_cfg=True, dist=True):
     """
     Create configs and perform basic setups.
     """
@@ -102,7 +102,8 @@ def setup_config(args: DinoV3SetupArgs, strict_cfg=True):
     if args.output_dir is not None:
         write_config(cfg, args.output_dir)
     # modify the config inplace by applying scaling rules
-    apply_scaling_rules_to_cfg(cfg)
+    if dist:
+        apply_scaling_rules_to_cfg(cfg)
     return cfg
 
 

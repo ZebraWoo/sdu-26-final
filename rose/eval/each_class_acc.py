@@ -3,7 +3,7 @@ import glob
 import numpy as np
 import torch
 
-ROOT_DIR = "/data/wenjing/skin_dataset/rose-outputs"
+ROOT_DIR = "/data/wenjing/skin_dataset/swavderm_eval"
 
 # ------------------------------------------------
 # Compute per-class accuracy

@@ -1,0 +1,58 @@
+================================================================================
+转移到其它服务器训练「皮肤病分割（ROSE backbone + Mask2Former）」检查清单
+================================================================================
+
+一、用脚本打代码包（在本机仓库根目录执行）
+  ./script/pack_segmentation_training_bundle.sh
+  生成 rose-seg-training-bundle-时间戳.tar.gz（默认在仓库根目录）。
+
+  减小体积（去掉 detection/dense/text 等 eval 子目录，分割管线不需要）：
+  TRIM_EVAL_EXTRAS=1 ./script/pack_segmentation_training_bundle.sh
+
+二、必须单独拷贝的「大数据」（不要打进代码包）
+  1) HAM10000 分割数据
+     - 目录结构需满足 rose/data/datasets/ham10k_seg.py（文件名全小写）：
+       $ROOT/HAM10000train.csv, HAM10000val.csv, HAM10000test.csv
+     - 可用 script/prepare_ham10k_seg_splits.py 从 GroundTruth 或 images/ 生成上述 CSV
+       $ROOT/images/*.jpg
+       $ROOT/annotations/<isic_id>_segmentation.png（与 isic2018._load_segmentation 一致）
+     - 建议 rsync：
+       rsync -avP /本机/HAM10000/  user@server:/目标/HAM10000/
+
+  2) ROSE / SSL teacher 权重（config 里 model.pretrained_weights）
+     例如 teacher_checkpoint.pth（体积大）
+       rsync -avP /本机/teacher_checkpoint.pth  user@server:/目标/checkpoints/
+
+  3) 可选：若 config.yaml 里路径仍指向本机，在目标机上改 YAML 或用 CLI 覆盖：
+     model.config_file=...  model.pretrained_weights=...  datasets.root=...
+
+三、包内已包含的关键路径（无需再从别处拷）
+  - rose/ 整包 Python 源码（含 eval/segmentation、data、distributed、models、configs 等）
+  - 仓库根 config.yaml（与 Segmentation 里 model.config_file 可对应）
+  - requirements.txt、setup.py、pyproject.toml
+
+四、目标机环境
+  - Python 3.11+（与仓库 setup.py 声明一致）
+  - PyTorch / CUDA 与目标 GPU 匹配
+  - pip install -r requirements.txt
+  - pip install -e . 若报错：部分仓库的 setup.py 仍引用 dinov3 包名，可改用
+      export PYTHONPATH=/绝对路径/到/解压目录
+    再运行：
+      torchrun --nproc_per_node=N -m rose.eval.segmentation.run ...
+
+五、Mask2Former Deformable Attention
+  - ms_deform_attn.py 使用纯 PyTorch（F.grid_sample 等），在 GPU 上由 PyTorch 自带 CUDA 算子执行，无需编译 rose/eval/segmentation/models/utils/ops。
+
+六、训练命令示例（路径按目标机修改）
+  torchrun --nproc_per_node=4 -m rose.eval.segmentation.run \
+    config=rose/eval/segmentation/configs/config-ham10k-m2f-seg-training-v1.yaml \
+    model.pretrained_weights=/目标/checkpoints/teacher_checkpoint.pth \
+    datasets.root=/目标/HAM10000 \
+    output_dir=/目标/outputs/ham10k_m2f
+
+七、刻意未打入包的内容（需时用别的方式同步）
+  - .git（版本历史）：可在目标机 git clone 或 rsync -a .git
+  - logs/、训练输出 output_dir、notebook 输出、article 图表
+  - __pycache__、*.pyc
+
+================================================================================

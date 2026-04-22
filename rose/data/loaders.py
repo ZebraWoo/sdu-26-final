@@ -11,7 +11,7 @@ import torch
 from torch.utils.data import Sampler
 
 from .datasets import ADE20K, CocoCaptions, ImageNet, ImageNet22k, Dermoscopy, HAM10K, HIBA, MNDICHD
-from .datasets import BCN20K
+from .datasets import BCN20K, isic2018, ham10k_seg
 from .samplers import EpochSampler, InfiniteSampler, ShardedInfiniteSampler
 
 logger = logging.getLogger("dinov3")
@@ -77,6 +77,14 @@ def _parse_dataset_str(dataset_str: str):
         class_ = MNDICHD
         if "split" in kwargs:
             kwargs["split"] = MNDICHD.Split[kwargs["split"]]
+    elif name == "isic2018":
+        class_ = isic2018
+        if "split" in kwargs:
+            kwargs["split"] = isic2018.Split[kwargs["split"]]
+    elif name == "ham10k_seg":
+        class_ = ham10k_seg
+        if "split" in kwargs:
+            kwargs["split"] = ham10k_seg.Split[kwargs["split"]]
     elif name == "CocoCaptions":
         class_ = CocoCaptions
         if "split" in kwargs:
@@ -96,6 +104,7 @@ def make_dataset(
     dataset_str: str,
     transform: Optional[Callable] = None,
     target_transform: Optional[Callable] = None,
+    transforms: Optional[Callable] = None,
 ):
     """
     Creates a dataset with the specified parameters.
@@ -104,14 +113,14 @@ def make_dataset(
         dataset_str: A dataset string description (e.g. ImageNet:split=TRAIN).
         transform: A transform to apply to images.
         target_transform: A transform to apply to targets.
-
+        transforms: A transform to apply to both images and targets.
     Returns:
         The created dataset.
     """
     logger.info(f'using dataset: "{dataset_str}"')
 
     class_, kwargs = _parse_dataset_str(dataset_str)
-    dataset = class_(transform=transform, target_transform=target_transform, **kwargs)
+    dataset = class_(transform=transform, target_transform=target_transform, transforms=transforms, **kwargs)
 
     logger.info(f"# of dataset samples: {len(dataset):,d}")
 
@@ -120,7 +129,8 @@ def make_dataset(
         dataset.transform = transform
     if not hasattr(dataset, "target_transform"):
         dataset.target_transform = target_transform
-
+    if not hasattr(dataset, "transforms"):
+        dataset.transforms = transforms
     return dataset
 
 
@@ -202,6 +212,7 @@ def make_data_loader(
     drop_last: bool = True,
     persistent_workers: bool = False,
     collate_fn: Optional[Callable[[List[T]], Any]] = None,
+    worker_init_fn: Optional[Callable[[List[T]], Any]] = None,
 ):
     """
     Creates a data loader with the specified parameters.
@@ -218,6 +229,7 @@ def make_data_loader(
         drop_last: Whether the last non-full batch of data should be dropped.
         persistent_workers: maintain the workers Dataset instances alive after a dataset has been consumed once.
         collate_fn: Function that performs batch collation
+        worker_init_fn: Optional init function for each dataloader worker.
     """
 
     sampler = _make_sampler(
@@ -239,6 +251,7 @@ def make_data_loader(
         drop_last=drop_last,
         persistent_workers=persistent_workers,
         collate_fn=collate_fn,
+        worker_init_fn=worker_init_fn,
     )
 
     try:

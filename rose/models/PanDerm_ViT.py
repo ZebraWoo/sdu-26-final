@@ -492,6 +492,57 @@ class VisionTransformer(nn.Module):
         self.num_classes = num_classes
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
+    def get_last_feature_map(
+        self,
+        x: torch.Tensor,
+        *,
+        reshape: bool = True,
+        norm: bool = True,
+    ):
+        """
+        Return the last block's patch features in the same format as
+        get_intermediate_layers(..., reshape=True).
+
+        Returns:
+            Tuple[Tensor]: a tuple with one element of shape (B, C, H, W)
+        """
+        # ---- patch embedding ----
+        x = self.patch_embed(x)  # (B, N, C)
+        B, N, C = x.shape
+
+        # ---- add cls token ----
+        cls_tokens = self.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+
+        # ---- add positional embedding ----
+        if self.pos_embed is not None:
+            x = x + self.pos_embed.expand(B, -1, -1).type_as(x)
+
+        x = self.pos_drop(x)
+
+        # ---- transformer blocks ----
+        rel_pos_bias = self.rel_pos_bias() if self.rel_pos_bias is not None else None
+        for blk in self.blocks:
+            x = blk(x, rel_pos_bias=rel_pos_bias)
+
+        # ---- norm ----
+        if norm:
+            x = self.norm(x)
+
+        # ---- remove cls token, keep patch tokens ----
+        patch_tokens = x[:, 1:, :]  # (B, N, C)
+
+        if reshape:
+            H, W = self.patch_embed.patch_shape
+            patch_tokens = (
+                patch_tokens
+                .reshape(B, H, W, C)
+                .permute(0, 3, 1, 2)
+                .contiguous()
+            )  # (B, C, H, W)
+
+        return (patch_tokens,)
+
     def forward_features(self, x, is_train=True):
         x = self.patch_embed(x)
         batch_size, seq_len, _ = x.size()
@@ -544,4 +595,5 @@ def panderm_large_patch16_224(pretrained=False, **kwargs):
         patch_size=16, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = _cfg()
+    model.n_blocks=24
     return model

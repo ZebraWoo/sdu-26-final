@@ -1,5 +1,7 @@
 import numpy as np
 import torch
+import csv
+import os
 from torchmetrics.classification import (
     MulticlassAccuracy,
     MulticlassAUROC,
@@ -34,9 +36,12 @@ MulticlassPrecisionRecallCurve.compute_AUPR = compute_AUPR
 # -------------------------
 # 2. Load predictions and targets
 # -------------------------
-preds = np.load("/data/wenjing/skin_dataset/swavderm_eval/ham_linear_output/preds_HAM10K_TEST.npy")
-targets = np.load("/data/wenjing/skin_dataset/swavderm_eval/ham_linear_output/target_HAM10K_TEST.npy")
+# outputs_dir = "/data/wenjing/skin_dataset/swavderm_eval/ham_linear_output_fewshot" # manual setting
+# outputs_dir = "/data/wenjing/skin_dataset/panderm_eval/ham_linear_output_fewshot"
+preds = np.load("/data/wenjing/skin_dataset/rose-outputs/reader_study/preds_HAM10K_TEST.npy")
+targets = np.load("/data/wenjing/skin_dataset/rose-outputs/reader_study/target_HAM10K_TEST.npy")
 
+# csv_path = os.path.join(outputs_dir, "HAM_bootstrap_results.csv")
 # 验证数据类型和形状
 print(f"Predictions shape: {preds.shape}, dtype: {preds.dtype}")
 print(f"Targets shape: {targets.shape}, dtype: {targets.dtype}")
@@ -171,3 +176,22 @@ for k, (mean, lower, upper) in results_ci.items():
     print(f"{k:10s}: {mean:.4f} (95% CI: [{lower:.4f}, {upper:.4f}])")
 print("="*48 + "\n")
 
+
+
+"""with open(csv_path, mode="w", newline="") as f:
+    writer = csv.writer(f)
+    
+    # header
+    writer.writerow(["Metric", "Mean", "CI_Lower", "CI_Upper"])
+    
+    # rows
+    for metric, (mean, lower, upper) in results_ci.items():
+        writer.writerow([
+            metric,
+            f"{mean:.4f}",
+            f"{lower:.4f}",
+            f"{upper:.4f}"
+        ])
+
+print(f"Results saved to {csv_path}")
+"""

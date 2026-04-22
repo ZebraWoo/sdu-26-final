@@ -98,7 +98,7 @@ class TrainConfig:
     loss_type: LossType = LossType.CROSS_ENTROPY
     optimizer_type: OptimizerType = OptimizerType.SGD
     scheduler_type: SchedulerType = SchedulerType.COSINE_ANNEALING
-    epochs: int = 90  # number of training epochs
+    epochs: int = 80  # number of training epochs
     epoch_length: int = 20  # length of an epoch in number of iterations
     save_checkpoint_iterations: int | None = (
         None  # number of iterations between two checkpoint saves (default: one epoch)
@@ -620,7 +620,7 @@ def eval_linear_with_model(*, model: torch.nn.Module, autocast_dtype, config: Li
     )
     n_last_blocks = max(config.train.n_last_blocks_list)
     autocast_ctx = partial(torch.autocast, device_type="cuda", enabled=True, dtype=autocast_dtype)
-    feature_model = ModelWithIntermediateLayers(model, n_last_blocks, autocast_ctx)
+    feature_model = ModelWithIntermediateLayers(model, n_last_blocks, autocast_ctx, reshape=False, return_class_token=True)
 
     save_results_func = None
     if config.save_results:
@@ -702,6 +702,15 @@ def benchmark_launcher(eval_args: dict[str, object]) -> dict[str, Any]:
 
 def main(argv=None):
     if argv is None:
+        """argv = [
+            "model.model_name=ROSE",
+            "model.config_file=/data/wenjing/skin_dataset/rose-outputs/config.yaml",
+            "model.pretrained_weights=/data/wenjing/skin_dataset/rose-outputs/eval/training_35999/teacher_checkpoint.pth",
+            "output_dir=/data/wenjing/skin_dataset/rose-outputs/fewshot/hiba_10",
+            "train.dataset=HIBA:split=TRAIN:root=/data/wenjing/skin_dataset/ssl:extra=/data/wenjing/skin_dataset/ssl/extra",
+            "train.val_dataset=HIBA:split=VAL:root=/data/wenjing/skin_dataset/ssl:extra=/data/wenjing/skin_dataset/ssl/extra",
+            "eval.test_datasets=[HIBA:split=TEST:root=/data/wenjing/skin_dataset/ssl:extra=/data/wenjing/skin_dataset/ssl/extra]",
+            ]"""
         argv = sys.argv[1:]
     eval_args = cli_parser(argv)
     with job_context(output_dir=eval_args["output_dir"]):

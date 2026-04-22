@@ -467,7 +467,12 @@ class DINOv3_Adapter(nn.Module):
         c1 = self.up(c2) + c1
 
         if self.add_vit_feature:
-            x1, x2, x3, x4 = outs
+            # x1, x2, x3, x4 = outs
+            if len(outs) == 4:
+                x1, x2, x3, x4 = outs
+            else:
+                # LAST or fewer than 4 layers: use single ViT feature at all scales
+                x1 = x2 = x3 = x4 = outs[0]
 
             x1 = F.interpolate(x1, size=(4 * H_c, 4 * W_c), mode="bilinear", align_corners=False)
             x2 = F.interpolate(x2, size=(2 * H_c, 2 * W_c), mode="bilinear", align_corners=False)

@@ -4,7 +4,8 @@
 # the terms of the DINOv3 License Agreement.
 
 from dataclasses import dataclass
-from typing import Tuple, TypedDict
+from typing import Tuple, TypedDict,Optional
+
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -18,7 +19,8 @@ from .timm_wrapper import TimmCNNEncoder
 @dataclass
 class ModelConfig:    
     # Loading a local file
-    config_file: str
+    # config_file: str
+    config_file: Optional[str] = None
     pretrained_weights: str | None = None
     # Loading a DINOv3 or v2 model from torch.hub
     dino_hub: str | None = None

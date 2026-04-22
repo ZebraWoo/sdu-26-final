@@ -53,7 +53,7 @@ if __name__ == "__main__":
     # ------------------------
     # 3. 载入一张测试图片
     # ------------------------
-    test_image_path = "/data/wenjing/skin_dataset/ssl/ssl_data/challenge2020/ISIC_0175364.jpg"  # 修改成你的图片路径
+    test_image_path = "/data/wenjing/skin_dataset/qilu/image/20250205006_0.jpg"  # 修改成你的图片路径
     image = Image.open(test_image_path).convert("RGB")
     # ------------------------
     # 4. 执行增强
@@ -74,12 +74,12 @@ if __name__ == "__main__":
     for i, crop in enumerate(global_crops):
         # crop 是 Tensor (C,H,W)，需要转回 PIL 图像
         pil_img = TF.to_pil_image(torch.clamp(crop, 0, 1))  # 防止溢出
-        save_path = save_dir / f"global_random_{i+1}.jpg"
+        save_path = save_dir / f"bcc_{i+1}.jpg"
         pil_img.save(save_path)
         print(f"Saved {save_path}")
 
-    for i, crops in enumerate(local_crops):
+    """for i, crops in enumerate(local_crops):
         pil_img = TF.to_pil_image(torch.clamp(crops, 0, 1))
         save_path = save_dir / f"local_random_{i+1}.jpg"
         pil_img.save(save_path)
-        print(f"saved {save_path}")
+        print(f"saved {save_path}")"""

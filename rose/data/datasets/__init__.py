@@ -12,3 +12,5 @@ from .ham10k import HAM10K
 from .hiba import HIBA
 from .bcn20000 import BCN20K
 from .melVSnevi import MNDICHD
+from .isic2018 import isic2018
+from .ham10k_seg import ham10k_seg

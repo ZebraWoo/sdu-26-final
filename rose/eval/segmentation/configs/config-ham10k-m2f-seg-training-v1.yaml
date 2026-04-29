@@ -1,20 +1,20 @@
-]# Config for HAM10K, Mask2Former training
+# Config for HAM10K, Mask2Former training
 
 bs: 2              # 每卡 batch size，按你显存调
-n_gpus: 4          # GPU 数量
+n_gpus: 1          # 先用单卡跑通；多卡训练时再改为实际 GPU 数
 metric_to_save: 'mIoU'
-model_dtype: FLOAT32
+model_dtype: BFLOAT16
 
 model:
   model_name: ROSE
-  config_file: /data/wenjing/skin_dataset/rose-outputs/config.yaml
-  pretrained_weights: /data/wenjing/skin_dataset/rose-outputs/eval/training_35999/teacher_checkpoint.pth
+  config_file: /home/wuzuoxu/Data/skin_dataset/config.yaml
+  pretrained_weights: /home/wuzuoxu/Data/skin_dataset/training_35999/teacher_checkpoint.pth
 
 scheduler:
   total_iter: 30000
   type: 'WarmupOneCycleLR'
   constructor_kwargs:
-    warmup_iters: 5000
+    warmup_iters: 500
     warmup_ratio: 1e-6
     final_div_factor: .inf
     pct_start: 0
@@ -23,25 +23,34 @@ scheduler:
     update_momentum: False
 
 optimizer:
-  lr: 1e-3
+  lr: 5e-5
   beta1: 0.9
   beta2: 0.999
   weight_decay: 1e-3
-  gradient_clip: 'inf'
+  gradient_clip: 1.0
 
 datasets:
-  root: "/data/wenjing/skin_dataset/ssl/segmentation/HAM10000"
+  root: "/home/wuzuoxu/Data/skin_dataset/ssl/HAM10000"
   train: ham10k_seg:split=TRAIN
   val:   ham10k_seg:split=VAL
   test:  ham10k_seg:split=TEST
 
 train:
   # 损失权重：Mask2Former 默认可用 dice + ce，你可按需要改
-  diceloss_weight: 0.5
-  celoss_weight: 1.0
+  diceloss_weight: 1.0
+  celoss_weight: 0.0
+  use_m2f_matching_loss: True
+  m2f_cls_weight: 2.0
+  m2f_mask_weight: 5.0
+  m2f_dice_weight: 5.0
+  m2f_eos_coef: 0.2
+  semantic_ce_aux_weight: 0.3
+  freeze_backbone_iters: 1200
+  backbone_lr_multiplier: 0.1
 
 decoder_head:
   type: "m2f"              # 使用 Mask2Former 头
+  hidden_dim: 1024         # 默认 2048，降低到 1024 可明显减轻 M2F 计算
   backbone_out_layers: LAST
   use_cls_token: False
   use_batchnorm: True
@@ -62,6 +71,14 @@ eval:
   reduce_zero_label: False
   mode: "slide"
   crop_size: 224
-  stride: 341
+  stride: 160
   eval_interval: 500
   use_tta: False
+  early_stop_patience: 4
+
+monitor:
+  enabled: True
+  interval: 200
+  only_rank0: True
+  log_pred_logits_softmax: False
+  pred_logits_softmax_queries: 4

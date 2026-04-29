@@ -9,7 +9,7 @@ import os
 import sys
 from typing import Any
 
-PROJECT_ROOT = "/home/jiangwenjing/hd/rose-copy"
+PROJECT_ROOT = "/home/wuzuoxu/rose-copy"
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 from rose.eval.segmentation.config import SegmentationConfig

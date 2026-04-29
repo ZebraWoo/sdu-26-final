@@ -1,21 +1,61 @@
+# Python build/cache
 build/
 dist/
 *.egg-info/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 **/__pycache__/
 
+# Virtual envs / local env
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Jupyter
 **/.ipynb_checkpoints
 **/.ipynb_checkpoints/**
 
-**/notebooks
-
-# Ignore shell scripts
-*.sh
-
-# Ignore swap files
-*.swp
-
-# Ignore vscode directory
+# Editor/OS
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
 
-# Local run artifacts
+# Logs and runtime artifacts
 logs/
+*.log
+wandb/
+runs/
+events.out.tfevents*
+
+# Training/checkpoint outputs
+outputs/
+output/
+checkpoints/
+**/checkpoints/
+**/model_final.pth
+**/*.ckpt
+**/*.pth
+**/*.pt
+**/*.safetensors
+
+# Local datasets and caches
+data/
+datasets/
+.cache/
+**/kagglehub/
+
+# Keep scripts and source notebooks tracked by default.
+# If you only want to ignore generated notebooks, add explicit paths.

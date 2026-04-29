@@ -71,6 +71,14 @@ class DecoderConfig:
 class TrainConfig:
     diceloss_weight: float = 0.0
     celoss_weight: float = 1.0
+    use_m2f_matching_loss: bool = False
+    m2f_cls_weight: float = 2.0
+    m2f_mask_weight: float = 5.0
+    m2f_dice_weight: float = 5.0
+    m2f_eos_coef: float = 0.1
+    semantic_ce_aux_weight: float = 0.0
+    freeze_backbone_iters: int = 0
+    backbone_lr_multiplier: float = 1.0
 
 
 @dataclass
@@ -104,6 +112,16 @@ class EvalConfig:
     stride: int | None = 341
     eval_interval: int = 40000
     use_tta: bool = False  # apply test-time augmentation at evaluation time
+    early_stop_patience: int | None = None  # stop if no improvement for N eval rounds
+
+
+@dataclass
+class DataflowMonitorConfig:
+    enabled: bool = False
+    interval: int = 200
+    only_rank0: bool = True
+    log_pred_logits_softmax: bool = False
+    pred_logits_softmax_queries: int = 4
 
 
 @dataclass
@@ -122,6 +140,7 @@ class SegmentationConfig:
     transforms: TransformConfig = field(default_factory=TransformConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    monitor: DataflowMonitorConfig = field(default_factory=DataflowMonitorConfig)
     # Additional Parameters
     output_dir: str | None = None
     load_from: str | None = None  # path to .pt checkpoint to resume training from or evaluate from

@@ -232,7 +232,14 @@ class MultilabelDiceLoss(DiceLoss):
                 num_classes=num_classes,
             ).permute(0, 3, 1, 2).float()
 
-        pred = F.sigmoid(pred)
+        # For M2F branch, `pred` may already be a probability map in [0, 1].
+        # Applying sigmoid again squashes contrast and can stall learning.
+        pred_min = float(pred.detach().min())
+        pred_max = float(pred.detach().max())
+        if 0.0 <= pred_min and pred_max <= 1.0:
+            pred = pred
+        else:
+            pred = F.sigmoid(pred)
         if False:
             valid_mask = (target[..., self.ignore_index] == 0).long()
         else:
@@ -291,14 +298,14 @@ class MultiSegmentationLoss(nn.Module):
 
     def __init__(self, diceloss_weight=0.0, celoss_weight=0.0):
         super(MultiSegmentationLoss, self).__init__()
-
-        if diceloss_weight > 0:
-            self.loss = MultilabelDiceLoss(loss_weight=diceloss_weight)
-        elif celoss_weight > 0:
-            self.loss = CrossEntropyLoss(reduction="mean", loss_weight=celoss_weight)
-        else:
-            self.loss = lambda _: 0
+        self.dice_loss = MultilabelDiceLoss(loss_weight=diceloss_weight) if diceloss_weight > 0 else None
+        self.ce_loss = CrossEntropyLoss(reduction="mean", loss_weight=celoss_weight) if celoss_weight > 0 else None
 
     def forward(self, pred, gt):
         """Forward function."""
-        return self.loss(pred, gt)
+        total = pred.new_tensor(0.0)
+        if self.dice_loss is not None:
+            total = total + self.dice_loss(pred, gt)
+        if self.ce_loss is not None:
+            total = total + self.ce_loss(pred, gt)
+        return total

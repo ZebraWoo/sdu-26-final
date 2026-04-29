@@ -16,6 +16,7 @@ from rose.data import DatasetWithEnumeratedTargets, SamplerType, make_data_loade
 import rose.distributed as distributed
 from rose.eval.segmentation.eval import evaluate_segmentation_model
 from rose.eval.segmentation.loss import MultiSegmentationLoss
+from rose.eval.segmentation.m2f_matching_loss import M2FSetCriterion, M2FLossWeights
 from rose.eval.segmentation.metrics import SEGMENTATION_METRICS
 from rose.eval.segmentation.models import build_segmentation_decoder
 from rose.eval.segmentation.schedulers import build_scheduler
@@ -23,6 +24,77 @@ from rose.eval.segmentation.transforms import make_segmentation_eval_transforms,
 from rose.logging import MetricLogger, SmoothedValue
 
 logger = logging.getLogger("dinov3")
+
+
+def _tensor_stats(x: torch.Tensor) -> str:
+    x = x.detach()
+    return (
+        f"shape={tuple(x.shape)} dtype={x.dtype} "
+        f"min={float(x.min()):.4f} max={float(x.max()):.4f} mean={float(x.mean()):.4f}"
+    )
+
+
+def _log_dataflow(
+    *,
+    global_step: int,
+    batch_img: torch.Tensor,
+    gt: torch.Tensor,
+    raw_pred,
+    pred_for_loss: torch.Tensor,
+    monitor_cfg,
+    loss_components: dict | None = None,
+):
+    if not getattr(monitor_cfg, "enabled", False):
+        return
+    interval = max(int(getattr(monitor_cfg, "interval", 200)), 1)
+    if global_step % interval != 0:
+        return
+    if getattr(monitor_cfg, "only_rank0", True) and not distributed.is_main_process():
+        return
+
+    msg = [f"[MONITOR] step={global_step}"]
+    gt_fg_ratio = float((gt > 0).float().mean())
+    msg.append(f"gt_fg_ratio={gt_fg_ratio:.4f}")
+
+    if isinstance(raw_pred, dict):
+        pm = raw_pred.get("pred_masks")
+        pl = raw_pred.get("pred_logits")
+        if isinstance(pl, torch.Tensor):
+            probs = pl.softmax(dim=-1).detach()
+            noobj_prob = float(probs[..., -1].mean())
+            fg_prob = float(probs[..., :-1].mean())
+            msg.append(f"class_prob_mean(fg={fg_prob:.4f},noobj={noobj_prob:.4f})")
+            if getattr(monitor_cfg, "log_pred_logits_softmax", False):
+                q = max(int(getattr(monitor_cfg, "pred_logits_softmax_queries", 4)), 1)
+                q = min(q, probs.shape[1])
+                probs_sample = probs[0, :q, :].float().cpu()
+                probs_sample = torch.round(probs_sample * 10000) / 10000
+                msg.append(f"softmax[0,:{q},:]={probs_sample.tolist()}")
+
+    pred_fg_ratio = float((pred_for_loss.argmax(dim=1) > 0).float().mean())
+    msg.append(f"pred_fg_ratio={pred_fg_ratio:.4f}")
+    if loss_components:
+        printed = []
+        for key in (
+            "loss_cls",
+            "loss_mask",
+            "loss_dice",
+            "loss_cls_weighted",
+            "loss_mask_weighted",
+            "loss_dice_weighted",
+            "loss_total_matching",
+            "loss_semantic_ce_aux",
+        ):
+            if key in loss_components:
+                value = loss_components[key]
+                if isinstance(value, torch.Tensor):
+                    value = float(value.detach())
+                else:
+                    value = float(value)
+                printed.append(f"{key}={value:.4f}")
+        if printed:
+            msg.append("losses{" + ", ".join(printed) + "}")
+    logger.info(" | ".join(msg))
 
 
 def _seg_target_to_tensor(t):
@@ -90,6 +162,12 @@ def worker_init_fn(worker_id, num_workers, rank, seed):
     torch.manual_seed(worker_seed)
 
 
+def _get_backbone_and_head_parameters(segmentation_model: torch.nn.Module):
+    backbone_params = [p for p in segmentation_model.module.segmentation_model[0].parameters() if p.requires_grad]
+    head_params = [p for p in segmentation_model.module.segmentation_model[1].parameters() if p.requires_grad]
+    return backbone_params, head_params
+
+
 def validate(
     segmentation_model: torch.nn.Module,
     val_dataloader,
@@ -136,6 +214,11 @@ def train_step(
     criterion,
     model_dtype,
     global_step,
+    monitor_cfg=None,
+    decoder_head_type: str = "linear",
+    semantic_ce_aux_weight: float = 0.0,
+    freeze_backbone: bool = False,
+    backbone_group_idx: int = 0,
 ):
     # a) load batch
     batch_img, (_, gt) = batch
@@ -151,24 +234,77 @@ def train_step(
 
     # b) forward pass
     with torch.autocast("cuda", dtype=model_dtype, enabled=True if model_dtype is not None else False):
-        pred = segmentation_model(batch_img)  # linear 头返回 tensor；M2F 头返回 dict
-        if isinstance(pred, dict):
+        raw_pred = segmentation_model(batch_img)  # linear 头返回 tensor；M2F 头返回 dict
+        pred = raw_pred
+        if isinstance(raw_pred, dict):
             # M2F: pred_masks [B,Q,H,W], pred_logits [B,Q,C] -> 合成 [B,C,H,W] 供 dice/ce loss
-            pm = pred.get("pred_masks")
-            pl = pred.get("pred_logits")
+            pm = raw_pred.get("pred_masks")
+            pl = raw_pred.get("pred_logits")
             if pm is not None and pl is not None:
-                pred = torch.einsum("bqhw,bqc->bchw", pm.sigmoid(), pl.softmax(dim=-1))
+                # Keep consistent with inference: drop the "no-object" class at last logit channel.
+                mask_cls = pl.softmax(dim=-1)[..., :-1]
+                mask_pred = pm.sigmoid()
+                pred = torch.einsum("bqc,bqhw->bchw", mask_cls.to(torch.float), mask_pred.to(torch.float))
             else:
                 pred = pred.get("pred_masks", pred.get("pred_logits", next(iter(pred.values()))))
-        gt = torch.squeeze(gt).long()  # Adapt gt dimension to enable loss calculation
+        # Keep batch dimension for bs=1; only squeeze a singleton channel if present.
+        if gt.ndim == 4 and gt.shape[1] == 1:
+            gt = gt[:, 0, ...]
+        elif gt.ndim == 2:
+            gt = gt.unsqueeze(0)
+        gt = gt.long()
         unique = torch.unique(gt)
     # c) compute loss
     if gt.shape[-2:] != pred.shape[-2:]:
         pred = torch.nn.functional.interpolate(input=pred, size=gt.shape[-2:], mode="bilinear", align_corners=False)
-    loss = criterion(pred, gt)
+    loss_components = None
+    if decoder_head_type == "m2f" and isinstance(raw_pred, dict) and isinstance(criterion, M2FSetCriterion):
+        do_monitor_log = bool(getattr(monitor_cfg, "enabled", False)) and (
+            global_step % max(int(getattr(monitor_cfg, "interval", 200)), 1) == 0
+        )
+        if do_monitor_log:
+            loss, loss_components = criterion(raw_pred, gt, return_components=True)
+        else:
+            loss = criterion(raw_pred, gt)
+        if semantic_ce_aux_weight > 0:
+            # Use synthesized [B,C,H,W] output as logits directly to avoid
+            # bf16 logit overflow/NaN when values are outside [0, 1].
+            semantic_logits = pred.float()
+            num_classes = semantic_logits.shape[1]
+            semantic_target = gt.clone()
+            invalid = (semantic_target < 0) | (semantic_target >= num_classes)
+            if invalid.any():
+                # Some datasets may contain ignore/unlabeled ids (e.g. 255).
+                # Mark out-of-range labels as ignore_index for CE.
+                semantic_target[invalid] = 255
+            semantic_ce = torch.nn.functional.cross_entropy(
+                semantic_logits,
+                semantic_target,
+                ignore_index=255,
+            )
+            loss = loss + semantic_ce_aux_weight * semantic_ce
+            if loss_components is not None:
+                loss_components["loss_semantic_ce_aux"] = semantic_ce_aux_weight * semantic_ce
+    else:
+        loss = criterion(pred, gt)
+    _log_dataflow(
+        global_step=global_step,
+        batch_img=batch_img,
+        gt=gt,
+        raw_pred=raw_pred,
+        pred_for_loss=pred,
+        monitor_cfg=monitor_cfg,
+        loss_components=loss_components,
+    )
+    # Track GT foreground ratio to quickly detect label-collapse (all background).
+    fg_ratio = (gt > 0).float().mean()
 
     # d) optimization
     max_norm = float(optimizer_gradient_clip) if isinstance(optimizer_gradient_clip, str) else optimizer_gradient_clip
+    if freeze_backbone and 0 <= backbone_group_idx < len(optimizer.param_groups):
+        # Keep forward/backward graph unchanged for DDP+checkpoint compatibility,
+        # but freeze backbone update by setting its optimizer LR to zero.
+        optimizer.param_groups[backbone_group_idx]["lr"] = 0.0
     if scaler is not None:
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -183,7 +319,7 @@ def train_step(
     if global_step > 0:  # inheritance from old mmcv code
         scheduler.step()
 
-    return loss
+    return loss, fg_ratio
 
 
 def train_segmentation(
@@ -217,7 +353,8 @@ def train_segmentation(
     global_device = distributed.get_rank()
     local_device = torch.cuda.current_device()
     segmentation_model = torch.nn.parallel.DistributedDataParallel(
-        segmentation_model.to(local_device), device_ids=[local_device]
+        segmentation_model.to(local_device),
+        device_ids=[local_device],
     )  # should be local rank
     model_parameters = filter(lambda p: p.requires_grad, segmentation_model.parameters())
     logger.info(f"Number of trainable parameters: {sum(p.numel() for p in model_parameters)}")
@@ -288,15 +425,29 @@ def train_segmentation(
     if config.model_dtype.autocast_dtype is not None:
         scaler = torch.amp.GradScaler("cuda")
 
+    backbone_lr = config.optimizer.lr * config.train.backbone_lr_multiplier
+    backbone_params, head_params = _get_backbone_and_head_parameters(segmentation_model)
     optimizer = torch.optim.AdamW(
         [
             {
-                "params": filter(lambda p: p.requires_grad, segmentation_model.parameters()),
+                "params": backbone_params,
+                "lr": backbone_lr,
+                "betas": (config.optimizer.beta1, config.optimizer.beta2),
+                "weight_decay": config.optimizer.weight_decay,
+            },
+            {
+                "params": head_params,
                 "lr": config.optimizer.lr,
                 "betas": (config.optimizer.beta1, config.optimizer.beta2),
                 "weight_decay": config.optimizer.weight_decay,
-            }
+            },
         ]
+    )
+    logger.info(
+        "Optimizer param groups: "
+        f"backbone_lr={backbone_lr:.3e}, head_lr={config.optimizer.lr:.3e}, "
+        f"backbone_params={sum(p.numel() for p in backbone_params)}, "
+        f"head_params={sum(p.numel() for p in head_params)}"
     )
     scheduler = build_scheduler(
         config.scheduler.type,
@@ -305,16 +456,49 @@ def train_segmentation(
         total_iter=config.scheduler.total_iter,
         constructor_kwargs=config.scheduler.constructor_kwargs,
     )
-    criterion = MultiSegmentationLoss(
-        diceloss_weight=config.train.diceloss_weight, celoss_weight=config.train.celoss_weight
-    )
+    if decoder_type == "m2f" and getattr(config.train, "use_m2f_matching_loss", False):
+        criterion = M2FSetCriterion(
+            num_classes=config.decoder_head.num_classes,
+            weights=M2FLossWeights(
+                class_weight=config.train.m2f_cls_weight,
+                mask_weight=config.train.m2f_mask_weight,
+                dice_weight=config.train.m2f_dice_weight,
+                eos_coef=config.train.m2f_eos_coef,
+            ),
+        )
+        logger.info(
+            "Using M2F matching loss (Hungarian): "
+            f"cls={config.train.m2f_cls_weight}, mask={config.train.m2f_mask_weight}, "
+            f"dice={config.train.m2f_dice_weight}, eos={config.train.m2f_eos_coef}"
+        )
+    else:
+        criterion = MultiSegmentationLoss(
+            diceloss_weight=config.train.diceloss_weight, celoss_weight=config.train.celoss_weight
+        )
     total_iter = config.scheduler.total_iter
     global_step = 0
     global_best_metric_values = {metric: 0.0 for metric in SEGMENTATION_METRICS}
+    no_improve_evals = 0
+    early_stop_patience = config.eval.early_stop_patience
+
+    def _save_decoder_checkpoint(filename: str, metric_values: dict | None = None):
+        torch.save(
+            {
+                "model": {k: v for k, v in segmentation_model.module.state_dict().items() if "segmentation_model.1" in k},
+                "optimizer": optimizer.state_dict(),
+                "global_step": global_step,
+                "metrics": metric_values or {},
+            },
+            os.path.join(config.output_dir, filename),
+        )
 
     # 5- train the model
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter("loss", SmoothedValue(window_size=4, fmt="{value:.3f}"))
+    metric_logger.add_meter("fg_ratio", SmoothedValue(window_size=20, fmt="{value:.4f}"))
+    freeze_backbone_iters = max(int(getattr(config.train, "freeze_backbone_iters", 0)), 0)
+    if freeze_backbone_iters > 0:
+        logger.info(f"Backbone frozen for first {freeze_backbone_iters} iterations (by lr=0)")
     for batch in metric_logger.log_every(
         train_dataloader,
         50,
@@ -324,7 +508,10 @@ def train_segmentation(
     ):
         if global_step >= total_iter:
             break
-        loss = train_step(
+        if freeze_backbone_iters > 0 and global_step == freeze_backbone_iters:
+            logger.info(f"Backbone unfrozen at iteration {global_step}")
+        is_backbone_frozen = freeze_backbone_iters > 0 and global_step < freeze_backbone_iters
+        loss, fg_ratio = train_step(
             segmentation_model,
             batch,
             local_device,
@@ -335,9 +522,14 @@ def train_segmentation(
             criterion,
             config.model_dtype.autocast_dtype,
             global_step,
+            config.monitor,
+            decoder_type,
+            config.train.semantic_ce_aux_weight,
+            is_backbone_frozen,
+            0,
         )
         global_step += 1
-        metric_logger.update(loss=loss)
+        metric_logger.update(loss=loss, fg_ratio=float(fg_ratio))
         if global_step % config.eval.eval_interval == 0:
             dist.barrier()
             is_better, best_metric_values_dict = validate(
@@ -357,6 +549,16 @@ def train_segmentation(
             if is_better:
                 logger.info(f"New best metrics at Step {global_step}: {best_metric_values_dict}")
                 global_best_metric_values = best_metric_values_dict
+                no_improve_evals = 0
+                _save_decoder_checkpoint("best_mIoU.pth", metric_values=best_metric_values_dict)
+            else:
+                no_improve_evals += 1
+                if early_stop_patience is not None and no_improve_evals >= early_stop_patience:
+                    logger.info(
+                        f"Early stopping triggered at step {global_step}: "
+                        f"no improvement for {no_improve_evals} eval rounds."
+                    )
+                    break
 
         # one last validation only if the number of total iterations is NOT divisible by eval interval:
         if total_iter % config.eval.eval_interval:
@@ -380,12 +582,6 @@ def train_segmentation(
     logger.info("Training is done!")
     # segmentation_model is a module list of [backbone, decoder]
     # Only save the decoder head
-    torch.save(
-        {
-            "model": {k: v for k, v in segmentation_model.module.state_dict().items() if "segmentation_model.1" in k},
-            "optimizer": optimizer.state_dict(),
-        },
-        os.path.join(config.output_dir, "model_final.pth"),
-    )
+    _save_decoder_checkpoint("model_final.pth", metric_values=global_best_metric_values)
     logger.info(f"Final best metrics: {global_best_metric_values}")
     return global_best_metric_values

@@ -16,7 +16,12 @@ from torch.amp import autocast
 from rose.eval.segmentation.models.utils.batch_norm import get_norm
 from rose.eval.segmentation.models.utils.position_encoding import PositionEmbeddingSine
 from rose.eval.segmentation.models.utils.transformer import _get_clones, _get_activation_fn
-from rose.eval.segmentation.models.utils.ms_deform_attn import MSDeformAttn
+try:
+    # Prefer compiled CUDA op for faster multi-scale deformable attention.
+    from rose.eval.segmentation.models.utils.ops.modules.ms_deform_attn import MSDeformAttn
+except Exception:
+    # Fallback to pure PyTorch implementation if extension is unavailable.
+    from rose.eval.segmentation.models.utils.ms_deform_attn import MSDeformAttn
 
 
 def c2_xavier_fill(module: nn.Module) -> None:
